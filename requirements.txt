@@ -1,0 +1,16 @@
+alembic~=1.14.1
+fastapi~=0.115.8
+psycopg2-binary
+python-dotenv~=1.0.1
+sqlalchemy~=2.0.37
+fastapi-users[sqlalchemy]
+fastapi[all]
+uvicorn~=0.34.0
+asyncpg
+fastapi-cache2[redis]
+redis~=5.2.1
+gunicorn
+celery~=5.4.0
+flower
+pydantic~=2.10.6
+starlette~=0.45.3
