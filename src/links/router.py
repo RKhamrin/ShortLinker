@@ -10,13 +10,11 @@ from .schemas import LinksCreate, LinkOriginal
 from fastapi_cache.decorator import cache
 
 import os
-
+import hashlib
 import pytz
 
 from auth.users import auth_backend, current_active_user, fastapi_users
 from auth.db import User
-
-import hashlib
 
 router = APIRouter(
     prefix="/links",
@@ -30,19 +28,24 @@ def change_time(expires_at):
     return datetime_str
 
 def hash_with_salt(long_link):
-    salt = os.urandom(16)  # 16 байт соли
-
-    hash_object = hashlib.pbkdf2_hmac(
-        'sha256',  
-        long_link.encode('UTF-8'),  
-        salt,  
-        100000  
-    )
+    salt = os.urandom(16)
+    hash_object = hashlib.pbkdf2_hmac('sha256', long_link.encode('UTF-8'), salt, 100000)
 
     return hash_object
 
 @router.post("/shorten")
 async def add_link(new_link: LinksCreate, session: AsyncSession = Depends(get_async_session)):
+    """Функция создания короткой ссылки
+    params:
+        user_id: int
+        long_link: str
+        custom_alias: str (при передаче своей собственной короткой ссылки необходимо указать длину 10)
+        expires_at: datetime
+
+    returns: dict
+        status: str
+        short_link: str
+    """
     user_values = new_link.model_dump()
     query = select(linking.c.long_link)
     result = await session.execute(query)
@@ -58,12 +61,6 @@ async def add_link(new_link: LinksCreate, session: AsyncSession = Depends(get_as
 
         hash_object = hash_with_salt(long_link=user_values['long_link'])
         user_values['custom_alias'] =  hash_object.hex()[:10]
-
-        # hash_object = hashlib.sha256()
-        # # prefix_hash_link = user_values['long_link'].split('//')[0] + '//'
-        # main_hash_link = ('').join(user_values['long_link'].split('//')[1:])
-        # hash_object.update(main_hash_link.encode("UTF-8"))
-        # # user_values['custom_alias'] = prefix_hash_link + hash_object.hexdigest()[:10]
 
     table_values = {
         'user_id': user_values['user_id'],
@@ -83,6 +80,14 @@ async def add_link(new_link: LinksCreate, session: AsyncSession = Depends(get_as
 @router.get("/{short_code}")
 @cache(expire=180)
 async def activate_link(short_code, session: AsyncSession = Depends(get_async_session)):
+    """Функция перехода на оригинальный сайт по короткой ссылке 
+
+    params: 
+        short_code: str
+
+    returns: 
+        Redirect
+    """
     query = select(linking.c.long_link).where(linking.c.custom_alias == short_code)
     result = await session.execute(query)
     result = result.scalars().all()
@@ -105,6 +110,15 @@ async def activate_link(short_code, session: AsyncSession = Depends(get_async_se
 
 @router.delete("/{short_code}")
 async def delete_link(short_code, user: User = Depends(current_active_user), session: AsyncSession = Depends(get_async_session)):
+    """Функция удаления информации о короткой ссылке 
+
+    params: 
+        short_code: str
+
+    returns: dict
+        status: str
+    """
+    
     statement = delete(linking).where(linking.c.custom_alias == short_code)
     await session.execute(statement)
     await session.commit()
@@ -113,20 +127,22 @@ async def delete_link(short_code, user: User = Depends(current_active_user), ses
 
 @router.put("/{short_code}")
 async def change_link(short_code, user: User = Depends(current_active_user), session: AsyncSession = Depends(get_async_session)):
+    """Функция изменения короткой ссылки 
+
+    params: 
+        short_code: str
+
+    returns: dict
+        status: str
+        short_link: str
+    """
+    
     query = select(linking.c.long_link).where(linking.c.custom_alias == short_code)
     result = await session.execute(query)
     result = result.all()
 
     if len(result) == 0:
         return {"status": "failed", "data": f"no short link {short_code} in database"}
-
-    # hash_object = hashlib.sha256()
-    # # prefix_hash_link = user_values['long_link'].split('//')[0] + '//'
-    # main_hash_link = ('').join(result[0][0].split('//')[1:])
-    # hash_object.update(main_hash_link.encode("UTF-8"))
-    # new_short_link = hash_object.hexdigest()[:10]
-    # # user_values['custom_alias'] = prefix_hash_link + hash_object.hexdigest()[:10]
-    # # user_values['custom_alias'] =  hash_object.hexdigest()[:10]
 
     hash_object = hash_with_salt(long_link=result[0][0])
     new_short_link = hash_object.hex()[:10]
@@ -142,7 +158,17 @@ async def change_link(short_code, user: User = Depends(current_active_user), ses
 @router.get("/{short_code}/stats")
 @cache(expire=180)
 async def get_statistics_link(short_code, session: AsyncSession = Depends(get_async_session)):
-    print(short_code)
+    """Функция получения статистик короткой ссылки: оригинальная ссылка, дата создания, количество переходов, дата последнего использования
+
+    params: 
+        short_code: str
+
+    returns: dict
+        real_link: str
+        creation_date: datetime
+        number_of_usages: int
+        time_of_last_usage: datetime
+    """
     query = select(linking).where(linking.c.custom_alias == str(short_code))
     result = await session.execute(query)
     result = result.all()
@@ -160,11 +186,18 @@ async def get_statistics_link(short_code, session: AsyncSession = Depends(get_as
 @router.get("/links/search?original_url={url}")
 @cache(expire=180)
 async def search_link(url, session: AsyncSession = Depends(get_async_session)):
-    print(url)
+    """Функция получения оригинальной ссылки по короткой ссылке 
+
+    params: 
+        url: str
+
+    returns: dict
+        status: str
+        url: str
+    """
     query = select(linking.c.custom_alias).where(linking.c.long_link == url)
     result = await session.execute(query)
     result = result.all()
-    print(result)
     if len(result) == 0:
         return {"status": "failed", "data": f"no long link {url} in database"}
 
