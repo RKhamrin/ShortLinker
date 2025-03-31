@@ -11,7 +11,7 @@ from sqlalchemy import select, insert, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_async_session
-from .schemas import LinksCreate, LinkOriginal
+from .schemas import LinksCreate
 from .models import linking
 from models import User
 
