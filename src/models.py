@@ -13,7 +13,6 @@ class User(Base):
     __tablename__ = "user"
 
     id = Column(UUID, primary_key=True, index=True)
-    user_id = Column(Integer)
     email = Column(String, nullable=False)
     hashed_password = Column(String, nullable=False)
     registered_at = Column(DateTime(timezone=True), server_default=func.now())
